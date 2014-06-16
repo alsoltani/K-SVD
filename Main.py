@@ -1,34 +1,67 @@
 #coding:latin_1
 from Functions import *
-from Classes import *
-import numpy as np
-import cv2
-import timeit
+from PIL import Image
+from scipy.misc import imsave
 
-#----------------------------------------------------- CHARGING DATA -----------------------------------------------#
+#-------------------------------------------------------------------------------------------------------------------#
+#-------------------------------------------------- 1. Initial settings. -------------------------------------------#
 #-------------------------------------------------------------------------------------------------------------------#
 
-img = cv2.imread('Degas.jpg', 0)
+resize_shape = (256, 256)  # Resized image's shape
+sigma = 10                 # Noise standard dev.
 
-wave_name = 'haar'
-wave_level = None
-Phi_t = DictT(level=wave_level, name=wave_name)
+window_shape = (16, 16)    # Patches' shape
+step = 16                  # Patches' step
+ratio = 1             # Ratio for the dictionary (training set).
+ksvd_iter = 5              # Number of iterations for the K-SVD.
 
-BasisT = Phi_t.dot(np.identity(img.shape[0]))
-BasisT /= np.sqrt(np.sum(BasisT ** 2, axis=0))
-Basis = BasisT.T
-
-#------------------------------------------------------ K-SVD METHOD -----------------------------------------------#
+#-------------------------------------------------------------------------------------------------------------------#
+#--------------------------------------------------- 2. Image import. ----------------------------------------------#
 #-------------------------------------------------------------------------------------------------------------------#
 
-sparsity_constraint = 50
+name = 'Lenna'
+original_image = np.asarray(Image.open(name+'.png').convert('L').resize(resize_shape))
+learning_image = np.asarray(Image.open('Lenna.png').convert('L').resize(resize_shape))
 
-start = timeit.default_timer()
-phi_out, sparse_out = k_svd(Basis, img, sparsity_constraint, multi_channel_omp)
-stop = timeit.default_timer()
+#-------------------------------------------------------------------------------------------------------------------#
+#------------------------------------------------- 3. Image processing. --------------------------------------------#
+#-------------------------------------------------------------------------------------------------------------------#
 
-print "Calculation time : " + str(stop - start)
+noise_layer = np.random.normal(0, sigma ^ 2, original_image.size).reshape(original_image.shape).astype(int)
+noisy_image = original_image + noise_layer
 
-img_out = phi_out.dot(sparse_out).astype(int)
+imsave(name + '1 - Greysc image.jpg', Image.fromarray(np.uint8(original_image)))
+imsave(name + '2 - Noisy image.jpg', Image.fromarray(np.uint8(noisy_image)))
 
-cv2.imwrite('Degas_Out_Sparse_' + str(sparsity_constraint) + '.jpg', img_out)
+#-------------------------------------------------------------------------------------------------------------------#
+#----------------------------------------------------- 4. Denoising. -----------------------------------------------#
+#-------------------------------------------------------------------------------------------------------------------#
+
+denoised_image, calc_time, n_total = denoising(noisy_image, learning_image, window_shape, step, sigma, ratio, ksvd_iter)
+
+psnr = psnr(original_image, denoised_image)
+print 'PSNR             : ' + str(psnr) + ' dB.'
+
+imsave(name + '3 - Out - Step ' + str(step) + ' - kSVD ' + str(ksvd_iter) +
+       ' - Ratio ' + str(ratio) + '.jpg', Image.fromarray(np.uint8(denoised_image)))
+imsave(name + '4 - Difference - Step ' + str(step) + ' - kSVD ' + str(ksvd_iter) +
+       ' - Ratio ' + str(ratio) + '.jpg', Image.fromarray(np.uint8(np.abs(noisy_image - denoised_image))))
+
+txt = open(name + ' Parameters.txt', 'a')
+txt.write('INITIAL SETTINGS\n----------------' +
+              '\n\nResizing shape : ' + str(resize_shape) +
+              '\nWindow shape   : ' + str(window_shape) +
+              '\nWindow step    : ' + str(step) +
+              '\nResizing shape : ' + str(resize_shape) +
+              '\nSigma          : ' + str(sigma) +
+              '\nLearning ratio : ' + str(ratio) +
+              '\nK-SVD iter.    : ' + str(ksvd_iter) +
+              '\n\nComputation time : ' + str(calc_time) + ' seconds.' +
+              '\nPSNR           : ' + str(psnr) + ' dB.\n')
+txt.close()
+
+
+
+
+
+
